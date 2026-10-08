@@ -1,0 +1,14 @@
+{
+  "name": "developer-job-failure-alerts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/job_failure_service.ts",
+    "example": "tsx src/send_job_failure.ts",
+    "test": "tsx --test test/job_decision.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": { "zod": "^3.24.0" },
+  "devDependencies": { "tsx": "^4.19.0", "typescript": "^5.7.0", "@types/node": "^22.0.0" }
+}
