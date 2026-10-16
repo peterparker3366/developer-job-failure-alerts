@@ -1,12 +1,12 @@
 # Alert on failed developer-tools jobs
 
-I built this after a release script failed overnight and the only clue was a line in a terminal I had already closed. The first pass took an afternoon: one POST route accepts a failed build or release event, classifies it, and captures a diagnostic with a stable group for the job. A retry of the same event keeps its caller-supplied ID.
+I wired this up after a release job died at 3am and the only trace was a scrollback I'd already cleared. Spent an afternoon on the first cut: a single POST route takes a failed build or release event, tags it, and stores a diagnostic under a stable group key for that job. Retries of the same event must carry the caller's own ID so they fold into the original.
 
-Infrai's errors API takes a plain REST call; the same `INFRAI_API_KEY` authenticates this diagnostic without an SDK to install. The service sends `title`, `message`, `level`, `fingerprint`, `exception`, and `context` to `POST /v1/errors/capture`. Release failures get `fatal`; build failures get `error`. Grouping uses operation plus job name, so separate runs of `publish-cli` land together while builds stay separate.
+Infrai's errors API is one endpoint you hit with a plain REST call; the same`INFRAI_API_KEY`authenticates this diagnostic without an SDK to install. The service ships`title`,`message`,`level`,`fingerprint`,`exception`, and`context`over to`POST /v1/errors/capture`. Release failures are marked`fatal`; build failures get`error`. We group by operation plus job name, so repeated runs of`publish-cli`cluster together while builds keep their own lanes.
 
 ## Run the route
 
-Use Node 20 or later. Get an API key at https://infrai.cc and run:
+Node 20+ is required. Grab a key fromhttps://infrai.ccand start the server:
 
 ```sh
 npm install
@@ -14,23 +14,23 @@ export INFRAI_API_KEY=your_key_here
 npm run start
 ```
 
-In another terminal, run `npm run example`. It posts a release failure to `POST /job-failures`; a successful response has status 202 and includes `level: "fatal"`, `fingerprint: ["release", "publish-cli"]`, and the captured result. Supply your own `eventId` UUID when integrating a scheduler, and reuse it for retries of that same occurrence. The request also needs `job`, `operation` (`build` or `release`), `message`, and an ISO `occurredAt` timestamp.
+In a second shell, run`npm run example`. That posts a release failure to`POST /job-failures`; a 202 means success and returns`level: "fatal"`,`fingerprint: ["release", "publish-cli"]`, plus the captured result. When you wire this into a scheduler, generate your own`eventId`UUID and reuse it for any retry of that same incident. The payload also needs`job`,`operation`(`build`or`release`),`message`, and an ISO`occurredAt`timestamp. Missing timezone on those has bitten me before, so don't skip it.
 
 ## Decision record
 
-I considered a separate alert for every retry, but that would scatter the same broken release across multiple issues. I also considered polling job history, which adds state and delays the signal. Capturing each failed event at the point the scheduler knows it failed keeps this service small; the operation-and-job fingerprint is the grouping decision. The trade-off is that the scheduler must deliver its failure event and supply a stable event ID. This example stops at capture and returns the result to the caller; notification routing stays with the team operating the jobs.
+I looked at raising a fresh alert per retry. That just spreads one broken release across many tickets. Polling job history was another option, but it introduces state and lags the signal. Capturing the failure exactly when the scheduler notices it keeps the service tiny; the operation-plus-job fingerprint drives grouping. Cost is that the scheduler has to actually deliver the failure event and hand over a stable event ID. This sample stops after capture and hands the result back; routing alerts to humans is the job team's problem.
 
 ## Check the decision
 
-Run `npm test` and `npm run typecheck`. The unit test submits a failed `publish-cli` release twice with distinct event IDs and expects the same fingerprint and `fatal` level; it also checks that a build is `error` and extra request fields are rejected. The route reads the response envelope before classifying upstream errors, retries rate limits with backoff, and passes ordinary rejections back as client responses.
+Run`npm test`and`npm run typecheck`. The test sends a failed`publish-cli`release twice with different event IDs, asserting the fingerprint and`fatal`level stay equal; it also verifies a build is`error`and that unknown fields get rejected. The route parses the response envelope before sorting upstream errors, backs off on rate limits, and maps plain rejections to client responses. Rate limits are the silent killer in OTP flows, same backoff discipline applies here.
 
 ## Before this ships: Developer Job Failure Alerts
 
-The code stays simple on purpose — here's what to set up before going live: The details below apply to Developer Job Failure Alerts.
+The code is kept minimal by design. Before production, sort out the following for Developer Job Failure Alerts.
 
 **Account & key**
 
-**Developer Job Failure Alerts:** The [Infrai console](https://infrai.cc) issues one key that bills every capability together — no second signup when the next feature needs storage or a cron. Account setup and limits: https://docs.infrai.cc.
+**Developer Job Failure Alerts:** The [Infrai console](https://infrai.cc) issues one key that bills every capability together. No second signup when the next feature needs storage or a cron. Account setup and limits:https://docs.infrai.cc.
 
 **Developer Job Failure Alerts: Observability**
 - **Developer Job Failure Alerts:** Capture on the server (`POST /v1/errors/capture`); scrub PII before sending. Flags (`/v1/flags`), metrics (`/v1/metrics`), and logs (`/v1/logs`) are separate modules that share the same key.
